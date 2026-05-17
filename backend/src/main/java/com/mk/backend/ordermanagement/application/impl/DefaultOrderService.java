@@ -14,12 +14,16 @@ import com.mk.backend.ordermanagement.model.type.CleaningServiceCode;
 import com.mk.backend.ordermanagement.model.type.OrderStatus;
 import com.mk.backend.ordermanagement.persistence.CustomerRepository;
 import com.mk.backend.ordermanagement.persistence.OrderRepository;
+import com.mk.backend.ordermanagement.persistence.OrderSearchResult;
 import com.mk.backend.ordermanagement.persistence.ShopRepository;
+import com.mk.backend.ordermanagement.web.dto.request.ChangeOrderStatusRequest;
 import com.mk.backend.ordermanagement.web.dto.request.CreateOrderCustomerRequest;
 import com.mk.backend.ordermanagement.web.dto.request.CreateOrderItemRequest;
 import com.mk.backend.ordermanagement.web.dto.request.CreateOrderRequest;
+import com.mk.backend.ordermanagement.web.dto.request.OrderSearchRequest;
 import com.mk.backend.ordermanagement.web.dto.response.OrderSummaryResponse;
 import com.mk.backend.shared.error.NotFoundException;
+import com.mk.backend.shared.web.PageResponse;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -63,6 +67,29 @@ class DefaultOrderService implements OrderService {
     this.orderNumberGenerator = orderNumberGenerator;
     this.itemCodeGenerator = itemCodeGenerator;
     this.clock = clock;
+  }
+
+  @Override
+  public PageResponse<OrderSummaryResponse> findOrders(OrderSearchRequest request) {
+    String shopCode = request.shopCode();
+
+    if (!shopRepository.existsByShopCode(shopCode)) {
+      throw new NotFoundException("Shop with code %s was not found.".formatted(shopCode));
+    }
+
+    OrderSearchResult result =
+        orderRepository.searchOrders(
+            shopCode, request.query(), request.status(), request.page(), request.size());
+
+    List<OrderSummaryResponse> items =
+        result.items().stream().map(orderMapper::toSummaryResponse).toList();
+
+    return new PageResponse<>(
+        items,
+        request.page(),
+        request.size(),
+        result.totalItems(),
+        calculateTotalPages(result.totalItems(), request.size()));
   }
 
   @Override
@@ -137,6 +164,23 @@ class DefaultOrderService implements OrderService {
     return selectedServices;
   }
 
+  @Override
+  public OrderSummaryResponse changeStatus(UUID orderId, ChangeOrderStatusRequest request) {
+    CleaningOrder order =
+        orderRepository
+            .findById(orderId)
+            .orElseThrow(
+                () -> new NotFoundException("Order with id %s was not found.".formatted(orderId)));
+
+    orderValidator.validateStatusChange(order.status(), request.targetStatus());
+
+    Instant changedAt = Instant.now(clock);
+    CleaningOrder updatedOrder = order.withStatus(request.targetStatus(), changedAt);
+    CleaningOrder savedOrder = orderRepository.save(updatedOrder);
+
+    return orderMapper.toSummaryResponse(savedOrder);
+  }
+
   private Customer resolveCustomer(CreateOrderCustomerRequest request) {
     if (request.id() != null) {
       return customerRepository
@@ -158,5 +202,13 @@ class DefaultOrderService implements OrderService {
             UUID.randomUUID(), request.displayName(), request.email(), request.phoneNumber());
 
     return customerRepository.save(customer);
+  }
+
+  private int calculateTotalPages(int totalItems, int size) {
+    if (totalItems == 0) {
+      return 0;
+    }
+
+    return (int) Math.ceil((double) totalItems / size);
   }
 }
