@@ -29,13 +29,10 @@ export const routes: Routes = [
   {
     path: 'orders/create',
     loadComponent: () =>
-      import('./shared/ui/page-placeholder/page-placeholder').then((m) => m.PagePlaceholder),
+      import('./features/order-management/order-reception/order-reception').then(
+        (m) => m.OrderReception,
+      ),
     title: 'New order',
-    data: {
-      heading: 'New order',
-      badge: 'Prepared route',
-      description: 'The order reception workflow will be added in the next implementation step.',
-    },
   },
   {
     path: 'manager',
