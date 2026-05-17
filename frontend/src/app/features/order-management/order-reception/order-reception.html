@@ -1,0 +1,442 @@
+<section class="container py-4">
+  <div class="d-flex flex-column flex-lg-row justify-content-between gap-3 mb-4">
+    <div>
+      <p class="text-uppercase text-body-secondary small fw-semibold mb-1">Reception</p>
+      <h1 class="h3 mb-1">Receive textile</h1>
+      <p class="text-body-secondary mb-0">
+        Create a cleaning order for an existing or new customer.
+      </p>
+    </div>
+
+    @if (assignedShop(); as shop) {
+      <div class="align-self-lg-center">
+        <span class="badge text-bg-primary">{{ shop.name }} - {{ shop.shopCode }}</span>
+      </div>
+    }
+  </div>
+
+  @if (errorMessage()) {
+    <div class="alert alert-danger" role="alert">{{ errorMessage() }}</div>
+  }
+
+  @if (createdOrder(); as order) {
+    <div class="alert alert-success shadow-sm" role="status">
+      <div class="d-flex flex-column flex-lg-row justify-content-between gap-3">
+        <div>
+          <h2 class="h5 mb-1">Order {{ order.orderNumber }} was received.</h2>
+          <p class="mb-0">
+            {{ order.customerDisplayName }} - {{ order.itemCount }} items -
+            {{ order.totalPriceMinorUnits / 100 | currency: 'EUR' : 'symbol' : '1.2-2' }}
+          </p>
+        </div>
+
+        <div class="d-flex flex-column flex-sm-row gap-2 align-self-lg-center">
+          <button type="button" class="btn btn-success" (click)="resetForNextOrder()">
+            Create another order
+          </button>
+
+          @if (canOpenManagerOverview()) {
+            <button type="button" class="btn btn-outline-success" (click)="goToManagerOverview()">
+              Open manager overview
+            </button>
+          }
+        </div>
+      </div>
+    </div>
+  }
+
+  <form [formGroup]="receptionForm" (ngSubmit)="submit()" novalidate>
+    <div class="card border-0 shadow-sm mb-4 position-relative">
+      <div class="card-body">
+        <div class="d-flex flex-column flex-lg-row justify-content-between gap-2 mb-3">
+          <div>
+            <h2 class="h5 mb-1">Customer</h2>
+            <p class="text-body-secondary mb-0">
+              Enter a name and either an email address or a phone number. Matching customers appear
+              while typing.
+            </p>
+          </div>
+
+          @if (selectedCustomer()) {
+            <span class="badge text-bg-success align-self-lg-start"
+              >Existing customer selected</span
+            >
+          } @else {
+            <span class="badge text-bg-secondary align-self-lg-start"
+              >New customer if no match is selected</span
+            >
+          }
+        </div>
+
+        <div formGroupName="customer" class="row g-3">
+          <input type="hidden" formControlName="id" />
+
+          <div class="col-12 col-lg-4">
+            <label for="customerDisplayName" class="form-label">Name</label>
+            <input
+              id="customerDisplayName"
+              type="search"
+              class="form-control"
+              formControlName="displayName"
+              autocomplete="off"
+              placeholder="Max Mustermann"
+              [class.is-invalid]="displayName.invalid && (displayName.touched || submitted())"
+              (focus)="showCustomerResults.set(true)"
+              (input)="clearSelectedCustomer()"
+            />
+
+            @if (displayName.invalid && (displayName.touched || submitted())) {
+              <div class="invalid-feedback">
+                @if (displayName.hasError('required')) {
+                  Name is required.
+                }
+                @if (displayName.hasError('maxlength')) {
+                  Name is too long.
+                }
+                @if (displayName.hasError('server')) {
+                  {{ displayName.getError('server') }}
+                }
+              </div>
+            }
+          </div>
+
+          <div class="col-12 col-lg-4">
+            <label for="customerEmail" class="form-label">Email</label>
+            <input
+              id="customerEmail"
+              type="search"
+              class="form-control"
+              formControlName="email"
+              autocomplete="off"
+              placeholder="max.mustermann@gmail.com"
+              [class.is-invalid]="email.invalid && (email.touched || submitted())"
+              (focus)="showCustomerResults.set(true)"
+              (input)="clearSelectedCustomer()"
+            />
+
+            @if (email.invalid && (email.touched || submitted())) {
+              <div class="invalid-feedback">
+                @if (email.hasError('email')) {
+                  Enter a valid email address.
+                }
+                @if (email.hasError('maxlength')) {
+                  Email is too long.
+                }
+                @if (email.hasError('server')) {
+                  {{ email.getError('server') }}
+                }
+              </div>
+            }
+          </div>
+
+          <div class="col-12 col-lg-4">
+            <label for="customerPhoneNumber" class="form-label">Phone number</label>
+            <input
+              id="customerPhoneNumber"
+              type="search"
+              class="form-control"
+              formControlName="phoneNumber"
+              autocomplete="off"
+              placeholder="+49 30 123456"
+              [class.is-invalid]="phoneNumber.invalid && (phoneNumber.touched || submitted())"
+              (focus)="showCustomerResults.set(true)"
+              (input)="clearSelectedCustomer()"
+            />
+
+            @if (phoneNumber.invalid && (phoneNumber.touched || submitted())) {
+              <div class="invalid-feedback">
+                @if (phoneNumber.hasError('maxlength')) {
+                  Phone number is too long.
+                }
+                @if (phoneNumber.hasError('server')) {
+                  {{ phoneNumber.getError('server') }}
+                }
+              </div>
+            }
+          </div>
+        </div>
+
+        @if (customer.invalid && (customer.touched || submitted())) {
+          <div class="text-danger small mt-2">
+            @if (customer.hasError('customerContactRequired')) {
+              Enter either an email address or a phone number.
+            }
+            @if (customer.hasError('server')) {
+              {{ customer.getError('server') }}
+            }
+          </div>
+        }
+      </div>
+
+      @if (shouldShowCustomerDropdown()) {
+        <div class="position-absolute top-100 start-0 end-0 z-3 mx-3 mt-1">
+          <div class="list-group shadow-sm">
+            @if (isSearchingCustomers()) {
+              <div class="list-group-item text-body-secondary">
+                <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+                Searching customers...
+              </div>
+            } @else if (customerResults().length > 0) {
+              @for (customerResult of customerResults(); track customerResult.id) {
+                <button
+                  type="button"
+                  class="list-group-item list-group-item-action"
+                  (click)="selectCustomer(customerResult)"
+                >
+                  <span class="d-block fw-semibold">{{ customerResult.displayName }}</span>
+                  <span class="d-block small text-body-secondary">
+                    {{ customerResult.email || 'No email' }} -
+                    {{ customerResult.phoneNumber || 'No phone' }}
+                  </span>
+                </button>
+              }
+            } @else if (customerSearchMessage()) {
+              <div class="list-group-item text-body-secondary">{{ customerSearchMessage() }}</div>
+            }
+          </div>
+        </div>
+      }
+    </div>
+
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-body">
+        <div class="d-flex flex-column flex-lg-row justify-content-between gap-2 mb-3">
+          <div>
+            <h2 class="h5 mb-1">Textiles</h2>
+            <p class="text-body-secondary mb-0">
+              Select textile types, quantities, and cleaning services.
+            </p>
+          </div>
+          <span class="badge text-bg-light border align-self-lg-start"
+            >{{ totalItemCount() }} physical items</span
+          >
+        </div>
+
+        <div class="row g-3 mb-4">
+          @for (textile of textileOptions; track textile.type) {
+            <div class="col-12 col-md-6 col-xl-4">
+              <button
+                type="button"
+                class="btn w-100 h-100 border text-start p-3"
+                [class.btn-primary]="isTextileSelected(textile.type)"
+                [class.btn-outline-secondary]="!isTextileSelected(textile.type)"
+                [disabled]="isTextileSelected(textile.type)"
+                (click)="addTextile(textile.type)"
+              >
+                <span class="fs-4 me-2" aria-hidden="true">{{ textile.icon }}</span>
+                <span class="fw-semibold">{{ textile.label }}</span>
+              </button>
+            </div>
+          }
+        </div>
+
+        @if (items.invalid && submitted()) {
+          <div class="text-danger small mb-3">
+            @if (items.hasError('required')) {
+              Select at least one textile.
+            }
+            @if (items.hasError('server')) {
+              {{ items.getError('server') }}
+            }
+          </div>
+        }
+
+        @if (items.length === 0) {
+          <div class="border rounded p-4 text-center text-body-secondary">
+            No textiles selected yet.
+          </div>
+        } @else {
+          <div class="d-flex flex-column gap-3">
+            @for (item of items.controls; track item.controls.textileType.value) {
+              <div class="border rounded p-3" [formGroup]="item">
+                <div class="d-flex justify-content-between gap-3 mb-3">
+                  <h3 class="h6 mb-0">{{ item.controls.textileType.value }}</h3>
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-outline-danger"
+                    (click)="removeItem($index)"
+                  >
+                    Remove
+                  </button>
+                </div>
+
+                <div class="row g-3">
+                  <div class="col-12 col-md-3">
+                    <label class="form-label" [for]="'quantity-' + $index">Quantity</label>
+                    <input
+                      [id]="'quantity-' + $index"
+                      type="number"
+                      class="form-control"
+                      formControlName="quantity"
+                      min="1"
+                      max="20"
+                      [class.is-invalid]="
+                        item.controls.quantity.invalid &&
+                        (item.controls.quantity.touched || submitted())
+                      "
+                    />
+
+                    @if (
+                      item.controls.quantity.invalid &&
+                      (item.controls.quantity.touched || submitted())
+                    ) {
+                      <div class="invalid-feedback">
+                        @if (item.controls.quantity.hasError('required')) {
+                          Quantity is required.
+                        }
+                        @if (item.controls.quantity.hasError('min')) {
+                          Quantity must be at least 1.
+                        }
+                        @if (item.controls.quantity.hasError('max')) {
+                          Quantity must be at most 20.
+                        }
+                        @if (item.controls.quantity.hasError('server')) {
+                          {{ item.controls.quantity.getError('server') }}
+                        }
+                      </div>
+                    }
+                  </div>
+
+                  <div class="col-12 col-md-4">
+                    <label class="form-label" [for]="'material-' + $index">Material</label>
+                    <input
+                      [id]="'material-' + $index"
+                      type="text"
+                      class="form-control"
+                      formControlName="material"
+                      placeholder="Cotton, wool, silk..."
+                      [class.is-invalid]="
+                        item.controls.material.invalid &&
+                        (item.controls.material.touched || submitted())
+                      "
+                    />
+
+                    @if (
+                      item.controls.material.invalid &&
+                      (item.controls.material.touched || submitted())
+                    ) {
+                      <div class="invalid-feedback">
+                        @if (item.controls.material.hasError('maxlength')) {
+                          Material is too long.
+                        }
+                        @if (item.controls.material.hasError('server')) {
+                          {{ item.controls.material.getError('server') }}
+                        }
+                      </div>
+                    }
+                  </div>
+
+                  <div class="col-12 col-md-5">
+                    <div class="form-label">Services</div>
+
+                    @for (service of cleaningServices(); track service.code) {
+                      <div class="form-check">
+                        <input
+                          #serviceCheckbox
+                          class="form-check-input"
+                          type="checkbox"
+                          [id]="'service-' + $index + '-' + service.code"
+                          [checked]="isServiceSelected(item, service.code)"
+                          (change)="toggleService(item, service.code, serviceCheckbox.checked)"
+                        />
+                        <label
+                          class="form-check-label"
+                          [for]="'service-' + $index + '-' + service.code"
+                        >
+                          {{ service.displayName }}
+                          <span class="text-body-secondary">
+                            {{
+                              service.priceMinorUnits / 100 | currency: 'EUR' : 'symbol' : '1.2-2'
+                            }}
+                          </span>
+                        </label>
+                      </div>
+                    }
+
+                    @if (
+                      item.controls.serviceCodes.invalid &&
+                      (item.controls.serviceCodes.touched || submitted())
+                    ) {
+                      <div class="text-danger small mt-1">
+                        @if (item.controls.serviceCodes.hasError('required')) {
+                          Select at least one service.
+                        }
+                        @if (item.controls.serviceCodes.hasError('server')) {
+                          {{ item.controls.serviceCodes.getError('server') }}
+                        }
+                      </div>
+                    }
+                  </div>
+                </div>
+
+                <div class="text-end mt-3">
+                  <span class="text-body-secondary small me-2">Subtotal</span>
+                  <strong>{{
+                    calculateItemPriceMinorUnits(item) / 100 | currency: 'EUR' : 'symbol' : '1.2-2'
+                  }}</strong>
+                </div>
+              </div>
+            }
+          </div>
+        }
+      </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-body">
+        <div class="row g-3 align-items-end">
+          <div class="col-12 col-md-4">
+            <label for="expectedPickupDate" class="form-label">Expected pickup date</label>
+            <input
+              id="expectedPickupDate"
+              type="date"
+              class="form-control"
+              formControlName="expectedPickupDate"
+              readonly
+              [class.is-invalid]="
+                expectedPickupDate.invalid && (expectedPickupDate.touched || submitted())
+              "
+            />
+            <div class="form-text">Auto-calculated as today plus one day per physical item.</div>
+
+            @if (expectedPickupDate.invalid && (expectedPickupDate.touched || submitted())) {
+              <div class="invalid-feedback">
+                @if (expectedPickupDate.hasError('required')) {
+                  Expected pickup date is required.
+                }
+                @if (expectedPickupDate.hasError('server')) {
+                  {{ expectedPickupDate.getError('server') }}
+                }
+              </div>
+            }
+          </div>
+
+          <div class="col-12 col-md-4">
+            <div class="border rounded p-3 bg-body-tertiary">
+              <div class="text-body-secondary small">Preliminary total</div>
+              <div class="fs-4 fw-semibold">
+                {{ totalPriceMinorUnits() / 100 | currency: 'EUR' : 'symbol' : '1.2-2' }}
+              </div>
+              <div class="text-body-secondary small">Backend recalculates the final price.</div>
+            </div>
+          </div>
+
+          <div class="col-12 col-md-4 d-grid">
+            <button
+              type="submit"
+              class="btn btn-primary btn-lg"
+              [disabled]="isSubmitting() || isLoading()"
+            >
+              @if (isSubmitting()) {
+                <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+                Creating order...
+              } @else {
+                Create cleaning order
+              }
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </form>
+</section>
