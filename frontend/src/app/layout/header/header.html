@@ -1,0 +1,79 @@
+<nav class="navbar navbar-expand-lg bg-primary navbar-dark shadow-sm">
+  <div class="container-fluid">
+    <a class="navbar-brand fw-semibold" routerLink="/" (click)="closeMobileMenu()">
+      Clean It! AG
+    </a>
+
+    <button
+      class="navbar-toggler"
+      type="button"
+      aria-controls="mainNavigation"
+      [attr.aria-expanded]="!isMenuCollapsed()"
+      aria-label="Toggle navigation"
+      (click)="toggleMobileMenu()"
+    >
+      <span class="navbar-toggler-icon"></span>
+    </button>
+
+    <div id="mainNavigation" class="collapse navbar-collapse" [ngbCollapse]="isMenuCollapsed()">
+      <ul class="navbar-nav ms-auto align-items-lg-center gap-lg-2">
+        @if (showManagerMenu()) {
+          <li class="nav-item" ngbDropdown>
+            <button
+              type="button"
+              class="nav-link dropdown-toggle navbar-dropdown-toggle"
+              ngbDropdownToggle
+            >
+              Manager
+            </button>
+
+            <div ngbDropdownMenu>
+              @for (item of managerNavItems(); track item.route) {
+                <a class="dropdown-item" [routerLink]="item.route" (click)="closeMobileMenu()">
+                  {{ item.label }}
+                </a>
+              }
+            </div>
+          </li>
+        }
+
+        @for (item of mainNavItems; track item.route) {
+          <li class="nav-item">
+            <a
+              class="nav-link"
+              [routerLink]="item.route"
+              routerLinkActive="active"
+              [routerLinkActiveOptions]="{ exact: item.route === '/' }"
+              (click)="closeMobileMenu()"
+            >
+              {{ item.label }}
+            </a>
+          </li>
+        }
+
+        <li class="nav-item ms-lg-3" ngbDropdown>
+          <button
+            type="button"
+            class="nav-link dropdown-toggle navbar-dropdown-toggle"
+            ngbDropdownToggle
+          >
+            Role: {{ currentRole() | titlecase }}
+          </button>
+
+          <div ngbDropdownMenu>
+            @for (role of demoRoles; track role) {
+              <button
+                type="button"
+                class="dropdown-item"
+                [class.active]="role === currentRole()"
+                (click)="changeRole(role)"
+              >
+                {{ role | titlecase }}
+              </button>
+            }
+          </div>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
