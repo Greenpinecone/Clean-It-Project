@@ -18,25 +18,38 @@ import {
   Validators,
 } from '@angular/forms';
 import { Router } from '@angular/router';
-import { finalize } from 'rxjs';
+import {
+  catchError,
+  debounceTime,
+  distinctUntilChanged,
+  finalize,
+  map,
+  of,
+  startWith,
+  switchMap,
+} from 'rxjs';
 
 import { getApiValidationErrors } from '@core/api-errors/api-problem';
 import { DemoUser } from '@core/auth/demo-user';
 import { ToastNotifier } from '@core/notifications/toast-notifier';
 
 import { CleaningServiceApi } from '../data-access/api/cleaning-service-api';
+import { CustomerApi } from '../data-access/api/customer-api';
 import { OrderApi } from '../data-access/api/order-api';
 import { ShopApi } from '../data-access/api/shop-api';
 import { AssignedShopResponse } from '../data-access/dto/assigned-shop-response';
 import { CleaningServiceResponse } from '../data-access/dto/cleaning-service-response';
 import { CreateOrderRequest } from '../data-access/dto/create-order-request';
+import { CustomerSearchResponse } from '../data-access/dto/customer-search-response';
 import { OrderSummaryResponse } from '../data-access/dto/order-summary-response';
+import { CustomerSearchParams } from '../models/customer-search-params';
 import { TEXTILE_OPTIONS } from '../models/textile-option';
 import { TextileType } from '../models/textile-type';
 import { customerContactRequiredValidator } from './customer-contact-required.validator';
 import { CleaningServiceCode } from '../models/cleaning-service-codes';
 
 type CustomerForm = FormGroup<{
+  id: FormControl<string>;
   displayName: FormControl<string>;
   email: FormControl<string>;
   phoneNumber: FormControl<string>;
@@ -63,6 +76,7 @@ type ReceptionForm = FormGroup<{
 })
 export class OrderReception {
   private readonly cleaningServiceApi = inject(CleaningServiceApi);
+  private readonly customerApi = inject(CustomerApi);
   private readonly destroyRef = inject(DestroyRef);
   private readonly demoUser = inject(DemoUser);
   private readonly fb = inject(NonNullableFormBuilder);
@@ -76,6 +90,7 @@ export class OrderReception {
   protected readonly receptionForm: ReceptionForm = this.fb.group({
     customer: this.fb.group(
       {
+        id: [''],
         displayName: ['', [Validators.required, Validators.maxLength(120)]],
         email: ['', [Validators.email, Validators.maxLength(160)]],
         phoneNumber: ['', [Validators.maxLength(40)]],
@@ -88,12 +103,17 @@ export class OrderReception {
 
   protected readonly assignedShop = signal<AssignedShopResponse | null>(null);
   protected readonly cleaningServices = signal<CleaningServiceResponse[]>([]);
+  protected readonly customerResults = signal<CustomerSearchResponse[]>([]);
+  protected readonly selectedCustomer = signal<CustomerSearchResponse | null>(null);
   protected readonly createdOrder = signal<OrderSummaryResponse | null>(null);
 
   protected readonly isLoading = signal(false);
+  protected readonly isSearchingCustomers = signal(false);
   protected readonly isSubmitting = signal(false);
   protected readonly submitted = signal(false);
+  protected readonly showCustomerResults = signal(false);
   protected readonly errorMessage = signal<string | null>(null);
+  protected readonly customerSearchMessage = signal<string | null>(null);
 
   private readonly formChanged = signal(0);
 
@@ -121,6 +141,7 @@ export class OrderReception {
   constructor() {
     this.expectedPickupDate.setValue(this.calculateExpectedPickupDate(0), { emitEvent: false });
     this.loadInitialData();
+    this.watchCustomerSearch();
     this.watchFormChanges();
   }
 
@@ -208,6 +229,32 @@ export class OrderReception {
     return quantity * serviceTotal;
   }
 
+  protected selectCustomer(customer: CustomerSearchResponse): void {
+    this.selectedCustomer.set(customer);
+    this.showCustomerResults.set(false);
+    this.customerResults.set([]);
+    this.customerSearchMessage.set(null);
+
+    this.customer.setValue(
+      {
+        id: customer.id,
+        displayName: customer.displayName,
+        email: customer.email ?? '',
+        phoneNumber: customer.phoneNumber ?? '',
+      },
+      { emitEvent: false },
+    );
+  }
+
+  protected clearSelectedCustomer(): void {
+    if (!this.selectedCustomer() && !this.customer.controls.id.value) {
+      return;
+    }
+
+    this.selectedCustomer.set(null);
+    this.customer.controls.id.setValue('', { emitEvent: false });
+  }
+
   protected submit(): void {
     this.submitted.set(true);
     this.errorMessage.set(null);
@@ -251,10 +298,12 @@ export class OrderReception {
     this.submitted.set(false);
     this.errorMessage.set(null);
     this.createdOrder.set(null);
+    this.selectedCustomer.set(null);
+    this.customerResults.set([]);
     this.items.clear({ emitEvent: false });
     this.receptionForm.reset(
       {
-        customer: { displayName: '', email: '', phoneNumber: '' },
+        customer: { id: '', displayName: '', email: '', phoneNumber: '' },
         expectedPickupDate: this.calculateExpectedPickupDate(0),
         items: [],
       },
@@ -265,6 +314,15 @@ export class OrderReception {
 
   protected goToManagerOverview(): void {
     void this.router.navigate(['/manager', 'orders']);
+  }
+
+  protected shouldShowCustomerDropdown(): boolean {
+    return (
+      this.showCustomerResults() &&
+      (this.isSearchingCustomers() ||
+        this.customerResults().length > 0 ||
+        this.customerSearchMessage() !== null)
+    );
   }
 
   private loadInitialData(): void {
@@ -287,6 +345,48 @@ export class OrderReception {
       .subscribe({
         next: (services) => this.cleaningServices.set(services),
         error: () => this.errorMessage.set('Cleaning services could not be loaded.'),
+      });
+  }
+
+  private watchCustomerSearch(): void {
+    this.customer.valueChanges
+      .pipe(
+        startWith(this.customer.getRawValue()),
+        map(() => this.toCustomerSearchParams()),
+        debounceTime(300),
+        distinctUntilChanged(
+          (previous, current) => JSON.stringify(previous) === JSON.stringify(current),
+        ),
+        switchMap((params) => {
+          if (!params.displayName && !params.email && !params.phoneNumber) {
+            this.customerResults.set([]);
+            this.customerSearchMessage.set(null);
+            this.showCustomerResults.set(false);
+            return of([]);
+          }
+
+          this.isSearchingCustomers.set(true);
+          this.showCustomerResults.set(true);
+          this.customerSearchMessage.set(null);
+
+          return this.customerApi.searchCustomers(params).pipe(
+            catchError(() => {
+              this.customerSearchMessage.set('Customer search is currently unavailable.');
+              return of([]);
+            }),
+            finalize(() => this.isSearchingCustomers.set(false)),
+          );
+        }),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe((customers) => {
+        this.customerResults.set(customers);
+
+        if (customers.length === 0 && this.showCustomerResults() && !this.customerSearchMessage()) {
+          this.customerSearchMessage.set(
+            'No existing customer found. A new customer will be created.',
+          );
+        }
       });
   }
 
@@ -316,6 +416,21 @@ export class OrderReception {
     return `${year}-${month}-${day}`;
   }
 
+  private toCustomerSearchParams(): CustomerSearchParams {
+    const value = this.customer.getRawValue();
+
+    return {
+      displayName: this.toSearchValue(value.displayName),
+      email: this.toSearchValue(value.email),
+      phoneNumber: this.toSearchValue(value.phoneNumber),
+    };
+  }
+
+  private toSearchValue(value: string): string | undefined {
+    const trimmedValue = value.trim();
+    return trimmedValue.length >= 2 ? trimmedValue : undefined;
+  }
+
   private toCreateOrderRequest(): CreateOrderRequest {
     const value = this.receptionForm.getRawValue();
     const shop = this.assignedShop();
@@ -328,6 +443,7 @@ export class OrderReception {
       shopCode: shop.shopCode,
       expectedPickupDate: value.expectedPickupDate,
       customer: {
+        id: this.toOptionalString(value.customer.id),
         displayName: value.customer.displayName.trim(),
         email: this.toOptionalString(value.customer.email),
         phoneNumber: this.toOptionalString(value.customer.phoneNumber),

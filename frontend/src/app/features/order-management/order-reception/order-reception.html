@@ -4,7 +4,7 @@
       <p class="text-uppercase text-body-secondary small fw-semibold mb-1">Reception</p>
       <h1 class="h3 mb-1">Receive textile</h1>
       <p class="text-body-secondary mb-0">
-        Create a cleaning order by entering customer details and selecting textiles.
+        Create a cleaning order for an existing or new customer.
       </p>
     </div>
 
@@ -52,22 +52,37 @@
           <div>
             <h2 class="h5 mb-1">Customer</h2>
             <p class="text-body-secondary mb-0">
-              Enter a customer name and either an email address or a phone number.
+              Enter a name and either an email address or a phone number. Matching customers appear
+              while typing.
             </p>
           </div>
+
+          @if (selectedCustomer()) {
+            <span class="badge text-bg-success align-self-lg-start"
+              >Existing customer selected</span
+            >
+          } @else {
+            <span class="badge text-bg-secondary align-self-lg-start"
+              >New customer if no match is selected</span
+            >
+          }
         </div>
 
         <div formGroupName="customer" class="row g-3">
+          <input type="hidden" formControlName="id" />
+
           <div class="col-12 col-lg-4">
             <label for="customerDisplayName" class="form-label">Name</label>
             <input
               id="customerDisplayName"
-              type="text"
+              type="search"
               class="form-control"
               formControlName="displayName"
               autocomplete="off"
               placeholder="Max Mustermann"
               [class.is-invalid]="displayName.invalid && (displayName.touched || submitted())"
+              (focus)="showCustomerResults.set(true)"
+              (input)="clearSelectedCustomer()"
             />
 
             @if (displayName.invalid && (displayName.touched || submitted())) {
@@ -89,12 +104,14 @@
             <label for="customerEmail" class="form-label">Email</label>
             <input
               id="customerEmail"
-              type="email"
+              type="search"
               class="form-control"
               formControlName="email"
               autocomplete="off"
               placeholder="max.mustermann@gmail.com"
               [class.is-invalid]="email.invalid && (email.touched || submitted())"
+              (focus)="showCustomerResults.set(true)"
+              (input)="clearSelectedCustomer()"
             />
 
             @if (email.invalid && (email.touched || submitted())) {
@@ -116,12 +133,14 @@
             <label for="customerPhoneNumber" class="form-label">Phone number</label>
             <input
               id="customerPhoneNumber"
-              type="tel"
+              type="search"
               class="form-control"
               formControlName="phoneNumber"
               autocomplete="off"
               placeholder="+49 30 123456"
               [class.is-invalid]="phoneNumber.invalid && (phoneNumber.touched || submitted())"
+              (focus)="showCustomerResults.set(true)"
+              (input)="clearSelectedCustomer()"
             />
 
             @if (phoneNumber.invalid && (phoneNumber.touched || submitted())) {
@@ -148,6 +167,35 @@
           </div>
         }
       </div>
+
+      @if (shouldShowCustomerDropdown()) {
+        <div class="position-absolute top-100 start-0 end-0 z-3 mx-3 mt-1">
+          <div class="list-group shadow-sm">
+            @if (isSearchingCustomers()) {
+              <div class="list-group-item text-body-secondary">
+                <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+                Searching customers...
+              </div>
+            } @else if (customerResults().length > 0) {
+              @for (customerResult of customerResults(); track customerResult.id) {
+                <button
+                  type="button"
+                  class="list-group-item list-group-item-action"
+                  (click)="selectCustomer(customerResult)"
+                >
+                  <span class="d-block fw-semibold">{{ customerResult.displayName }}</span>
+                  <span class="d-block small text-body-secondary">
+                    {{ customerResult.email || 'No email' }} -
+                    {{ customerResult.phoneNumber || 'No phone' }}
+                  </span>
+                </button>
+              }
+            } @else if (customerSearchMessage()) {
+              <div class="list-group-item text-body-secondary">{{ customerSearchMessage() }}</div>
+            }
+          </div>
+        </div>
+      }
     </div>
 
     <div class="card border-0 shadow-sm mb-4">
