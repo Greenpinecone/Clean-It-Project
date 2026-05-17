@@ -1,4 +1,5 @@
 import { Routes } from '@angular/router';
+import { assignedShopResolver } from './data-access/resolvers/assigned-shop-resolver';
 
 export const ORDER_MANAGEMENT_ROUTES: Routes = [
   {
@@ -21,12 +22,12 @@ export const ORDER_MANAGEMENT_ROUTES: Routes = [
   {
     path: 'orders',
     loadComponent: () =>
-      import('@shared/ui/page-placeholder/page-placeholder').then((m) => m.PagePlaceholder),
+      import('./manager-order-overview/manager-order-overview').then(
+        (m) => m.ManagerOrderOverview,
+      ),
     title: 'Order overview',
-    data: {
-      heading: 'Order overview',
-      badge: 'Manager area',
-      description: 'The manager order overview will be added in the next implementation step.',
+    resolve: {
+      assignedShop: assignedShopResolver,
     },
   },
 ];

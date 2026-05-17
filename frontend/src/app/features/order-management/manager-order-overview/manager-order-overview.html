@@ -1,0 +1,212 @@
+<section class="container py-4">
+  <div class="d-flex flex-column flex-lg-row justify-content-between gap-3 mb-4">
+    <div>
+      <p class="text-uppercase text-body-secondary small fw-semibold mb-1">Manager area</p>
+
+      <h1 class="h3 mb-1">Order overview</h1>
+
+      <p class="text-body-secondary mb-0">
+        Search, filter, and update cleaning orders for your assigned shop.
+      </p>
+    </div>
+
+    @if (assignedShop(); as shop) {
+      <div class="align-self-lg-center">
+        <span class="badge text-bg-light text-secondary-emphasis border fs-6 px-3 py-2">
+          {{ shop.name }} - {{ shop.shopCode }}
+        </span>
+      </div>
+    }
+  </div>
+
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+      <form class="row g-3" [formGroup]="filtersForm">
+        <div class="col-12 col-md">
+          <label for="query" class="form-label">Search</label>
+
+          <input
+            id="query"
+            type="search"
+            class="form-control"
+            formControlName="query"
+            placeholder="Customer or order number"
+            [class.is-invalid]="query.invalid && (query.touched || query.dirty)"
+          />
+          <div
+            class="invalid-feedback d-block"
+            [class.invisible]="!(query.invalid && (query.touched || query.dirty))"
+          >
+            @if (query.hasError('maxlength')) {
+              Search query must not exceed 100 characters.
+            } @else if (query.hasError('server')) {
+              {{ query.getError('server') }}
+            } @else {
+              &nbsp;
+            }
+          </div>
+        </div>
+
+        <div class="col-12 col-md-6 col-xl-2">
+          <label for="status" class="form-label">Status</label>
+
+          <select
+            id="status"
+            class="form-select"
+            formControlName="status"
+            [class.is-invalid]="status.invalid && (status.touched || status.dirty)"
+          >
+            <option value="">All statuses</option>
+
+            @for (status of statusOptions; track status) {
+              <option [value]="status">
+                {{ toDisplayLabel(status) | titlecase }}
+              </option>
+            }
+          </select>
+          <div
+            class="invalid-feedback d-block"
+            [class.invisible]="!(status.invalid && (status.touched || status.dirty))"
+          >
+            @if (status.hasError('server')) {
+              {{ status.getError('server') }}
+            } @else {
+              &nbsp;
+            }
+          </div>
+        </div>
+
+        <div class="col-12 col-xl-2 d-flex flex-column justify-content-end">
+          <button
+            type="button"
+            class="btn btn-secondary w-100"
+            (click)="clearFilters()"
+            [disabled]="!query.value.trim() && !status.value"
+          >
+            Clear filters
+          </button>
+          <div aria-hidden="true" class="invisible d-block">&nbsp;</div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  @if (isOrdersLoading()) {
+    <div class="card border-0 shadow-sm">
+      <div class="card-body py-5 text-center">
+        <div class="spinner-border text-primary" role="status" aria-label="Loading orders"></div>
+        <p class="text-body-secondary mt-3 mb-0">Loading orders...</p>
+      </div>
+    </div>
+  } @else if (ordersLoadErrorMessage()) {
+    <div class="card border-0 shadow-sm">
+      <div class="card-body py-5 text-center">
+        <h2 class="h5 mb-2">Orders unavailable</h2>
+        <p class="text-body-secondary mb-0">
+          <span class="fw-semibold">Error:</span> {{ ordersLoadErrorMessage() }}
+        </p>
+      </div>
+    </div>
+  } @else if (!hasOrders()) {
+    <div class="card border-0 shadow-sm">
+      <div class="card-body py-5 text-center">
+        <h2 class="h5 mb-2">No orders found</h2>
+        <p class="text-body-secondary mb-0">No orders match the selected filters.</p>
+      </div>
+    </div>
+  } @else {
+    <div class="card border-0 shadow-sm">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 table-striped">
+          <thead>
+            <tr>
+              <th scope="col">Order</th>
+              <th scope="col">Customer</th>
+              <th scope="col">Status</th>
+              <th scope="col">Received</th>
+              <th scope="col">Expected pickup</th>
+              <th scope="col" class="text-end">Items</th>
+              <th scope="col" class="text-end">Total</th>
+              <th scope="col">Change status</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            @for (order of orders(); track order.id) {
+              <tr class="">
+                <td class="fw-semibold">
+                  {{ order.orderNumber }}
+                </td>
+
+                <td>
+                  {{ order.customerDisplayName }}
+                </td>
+
+                <td>
+                  <span class="badge" [ngClass]="statusBadgeClasses[order.status]">
+                    {{ toDisplayLabel(order.status) | titlecase }}
+                  </span>
+                </td>
+
+                <td>
+                  {{ order.receivedAt | date: 'short' }}
+                </td>
+
+                <td>
+                  {{ order.expectedPickupDate | date: 'mediumDate' }}
+                </td>
+
+                <td class="text-end">
+                  {{ order.itemCount }}
+                </td>
+
+                <td class="text-end">
+                  {{ order.totalPriceMinorUnits / 100 | currency }}
+                </td>
+
+                <td>
+                  <select
+                    #statusSelect
+                    class="form-select"
+                    [disabled]="updatingOrderId() !== null || !canChangeStatus(order.status)"
+                    (change)="onStatusSelectChanged(order, statusSelect)"
+                  >
+                    <option value="">Select status</option>
+
+                    @for (
+                      targetStatus of getAllowedTargetStatuses(order.status);
+                      track targetStatus
+                    ) {
+                      <option [value]="targetStatus">
+                        {{ toDisplayLabel(targetStatus) | titlecase }}
+                      </option>
+                    }
+                  </select>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <div
+        class="card-footer bg-body d-flex flex-row align-items-center justify-content-between gap-3 overflow-auto"
+      >
+        <div class="text-body-secondary small text-nowrap">
+          {{ totalItems() }} orders - page {{ page() }} of {{ totalPages() }}
+        </div>
+
+        <ngb-pagination
+          class="mt-3"
+          aria-label="Order result pages"
+          [collectionSize]="totalItems()"
+          [page]="page()"
+          [pageSize]="pageSize"
+          [maxSize]="5"
+          [boundaryLinks]="true"
+          (pageChange)="onPageChanged($event)"
+        />
+      </div>
+    </div>
+  }
+</section>
