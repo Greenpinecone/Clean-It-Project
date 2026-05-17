@@ -1,4 +1,5 @@
 import { Routes } from '@angular/router';
+import { managerRouteGuard } from './core/auth/guards/manager-route-guard';
 
 export const routes: Routes = [
   {
@@ -35,6 +36,14 @@ export const routes: Routes = [
       badge: 'Prepared route',
       description: 'The order reception workflow will be added in the next implementation step.',
     },
+  },
+  {
+    path: 'manager',
+    canActivateChild: [managerRouteGuard],
+    loadChildren: () =>
+      import('./features/order-management/order-management.routes').then(
+        (m) => m.ORDER_MANAGEMENT_ROUTES,
+      ),
   },
   {
     path: '**',
