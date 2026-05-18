@@ -5,6 +5,8 @@ on:
     branches:
       - main
   pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -64,8 +66,11 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Lint frontend
+        run: npm run lint
+
       - name: Run frontend tests
-        continue-on-error: true # Remove continue on error if tests are properly implemented
+        # continue-on-error: true # Remove continue on error if tests are properly implemented
         run: npm test -- --watch=false
 
       - name: Build frontend
