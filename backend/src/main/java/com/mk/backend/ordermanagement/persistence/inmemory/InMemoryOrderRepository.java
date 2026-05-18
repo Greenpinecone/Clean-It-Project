@@ -72,21 +72,21 @@ class InMemoryOrderRepository implements OrderRepository {
             UUID.fromString("0d15aca4-8dc0-4db6-a91e-a56296ac0a24"),
             "Max Mustermann",
             "max.mustermann@example.at",
-            "+43 660 0000001");
+            "+49 660 0000001");
 
     Customer annaHuber =
         new Customer(
             UUID.fromString("884af841-8d4c-4668-acee-8e60c64e7bb2"),
             "Anna Huber",
             "anna.huber@example.at",
-            "+43 660 0000002");
+            "+49 660 0000002");
 
     Customer cleanOffice =
         new Customer(
             UUID.fromString("bc71edd3-a327-46bd-b19d-3085dd3ff991"),
             "Clean Office GmbH",
             "office@example.at",
-            "+43 660 0000003");
+            "+49 660 0000003");
 
     List<CleaningOrderItem> items1 =
         List.of(
