@@ -7,15 +7,15 @@ import { getApiProblem } from './api-problem';
 export class ApiErrorFormatter {
   format(error: unknown): string {
     if (!(error instanceof HttpErrorResponse)) {
-      return 'Ein unbekannter Fehler ist aufgetreten.';
+      return 'An unknown error occurred.';
     }
 
     if (error.status === 0) {
-      return 'Der Server ist derzeit nicht erreichbar.';
+      return 'The server is currently unavailable.';
     }
 
     if (error.status >= 500) {
-      return 'Auf dem Server ist ein Fehler aufgetreten.';
+      return 'A server error occurred.';
     }
 
     const problem = getApiProblem(error);
@@ -31,17 +31,17 @@ export class ApiErrorFormatter {
   private messageFromStatus(status: number): string {
     switch (status) {
       case 400:
-        return 'Die Anfrage ist ungültig.';
+        return 'The request is invalid.';
       case 401:
-        return 'Sie sind nicht angemeldet.';
+        return 'You are not signed in.';
       case 403:
-        return 'Sie haben keine Berechtigung für diese Aktion.';
+        return 'You do not have permission to perform this action.';
       case 404:
-        return 'Der angeforderte Eintrag wurde nicht gefunden.';
+        return 'The requested record was not found.';
       case 409:
-        return 'Der Eintrag konnte wegen eines Konflikts nicht gespeichert werden.';
+        return 'The record could not be saved because of a conflict.';
       default:
-        return 'Ein unbekannter Fehler ist aufgetreten.';
+        return 'An unknown error occurred.';
     }
   }
 }
