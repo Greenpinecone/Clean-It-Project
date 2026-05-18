@@ -5,6 +5,7 @@ import {
   DestroyRef,
   computed,
   inject,
+  input,
   signal,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -27,15 +28,11 @@ import {
   startWith,
   switchMap,
 } from 'rxjs';
-
 import { getApiValidationErrors } from '@core/api-errors/api-problem';
 import { DemoUser } from '@core/auth/demo-user';
 import { ToastNotifier } from '@core/notifications/toast-notifier';
-
-import { CleaningServiceApi } from '../data-access/api/cleaning-service-api';
 import { CustomerApi } from '../data-access/api/customer-api';
 import { OrderApi } from '../data-access/api/order-api';
-import { ShopApi } from '../data-access/api/shop-api';
 import { AssignedShopResponse } from '../data-access/dto/assigned-shop-response';
 import { CleaningServiceResponse } from '../data-access/dto/cleaning-service-response';
 import { CreateOrderRequest } from '../data-access/dto/create-order-request';
@@ -77,22 +74,20 @@ type ReceptionForm = FormGroup<{
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class OrderReception {
-  private readonly cleaningServiceApi = inject(CleaningServiceApi);
   private readonly customerApi = inject(CustomerApi);
   private readonly destroyRef = inject(DestroyRef);
   private readonly demoUser = inject(DemoUser);
   private readonly fb = inject(NonNullableFormBuilder);
   private readonly orderApi = inject(OrderApi);
   private readonly router = inject(Router);
-  private readonly shopApi = inject(ShopApi);
   private readonly toastNotifier = inject(ToastNotifier);
 
-  protected readonly assignedShop = signal<AssignedShopResponse | null>(null);
-  protected readonly cleaningServices = signal<CleaningServiceResponse[]>([]);
+  protected readonly assignedShop = input.required<AssignedShopResponse>();
+  protected readonly cleaningServices = input.required<CleaningServiceResponse[]>();
+
   protected readonly customerResults = signal<CustomerSearchResponse[]>([]);
   protected readonly selectedCustomer = signal<CustomerSearchResponse | null>(null);
   protected readonly isNewCustomerMode = signal(false);
-  protected readonly isLoading = signal(false);
   protected readonly isSearchingCustomers = signal(false);
   protected readonly isSubmitting = signal(false);
   protected readonly submitted = signal(false);
@@ -139,7 +134,6 @@ export class OrderReception {
 
   constructor() {
     this.expectedPickupDate.setValue(this.calculateExpectedPickupDate(0), { emitEvent: false });
-    this.loadInitialData();
     this.watchCustomerSearch();
     this.watchFormChanges();
   }
@@ -238,7 +232,7 @@ export class OrderReception {
     this.errorMessage.set(null);
     clearServerValidationErrors(this.receptionForm);
 
-    if (this.receptionForm.invalid || !this.assignedShop()) {
+    if (this.receptionForm.invalid) {
       this.receptionForm.markAllAsTouched();
       return;
     }
@@ -302,29 +296,6 @@ export class OrderReception {
         this.customerResults().length > 0 ||
         this.customerSearchMessage() !== null)
     );
-  }
-
-  private loadInitialData(): void {
-    this.isLoading.set(true);
-
-    this.shopApi
-      .getAssignedShop()
-      .pipe(
-        finalize(() => this.isLoading.set(false)),
-        takeUntilDestroyed(this.destroyRef),
-      )
-      .subscribe({
-        next: (shop) => this.assignedShop.set(shop),
-        error: () => this.errorMessage.set('Assigned shop could not be loaded.'),
-      });
-
-    this.cleaningServiceApi
-      .getCleaningServices()
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (services) => this.cleaningServices.set(services),
-        error: () => this.errorMessage.set('Cleaning services could not be loaded.'),
-      });
   }
 
   private watchCustomerSearch(): void {
@@ -423,10 +394,6 @@ export class OrderReception {
   private toCreateOrderRequest(): CreateOrderRequest {
     const value = this.receptionForm.getRawValue();
     const shop = this.assignedShop();
-
-    if (!shop) {
-      throw new Error('Assigned shop is required.');
-    }
 
     return {
       shopCode: shop.shopCode,
