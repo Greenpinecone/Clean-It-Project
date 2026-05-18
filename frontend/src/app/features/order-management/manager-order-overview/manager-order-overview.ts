@@ -28,7 +28,7 @@ import { OrderSummaryResponse } from '../data-access/dto/order-summary-response'
 import {
   applyServerValidationErrors,
   clearServerValidationErrors,
-} from '@core/forms/server-valdiation-errors';
+} from '@core/forms/server-validation-errors';
 import { getApiValidationErrors } from '@core/api-errors/api-problem';
 
 type OrderFilterForm = FormGroup<{

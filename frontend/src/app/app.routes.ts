@@ -1,5 +1,7 @@
 import { Routes } from '@angular/router';
 import { managerRouteGuard } from './core/auth/guards/manager-route-guard';
+import { assignedShopResolver } from '@features/order-management/data-access/resolvers/assigned-shop-resolver';
+import { cleaningServicesResolver } from '@features/order-management/data-access/resolvers/cleaning-services-resolver';
 
 export const routes: Routes = [
   {
@@ -11,8 +13,7 @@ export const routes: Routes = [
     data: {
       heading: 'Clean It! AG',
       badge: 'Application shell',
-      description:
-        'Base Angular application shell for the Clean It! AG shop workflow prototype.',
+      description: 'Base Angular application shell for the Clean It! AG shop workflow prototype.',
     },
   },
   {
@@ -33,6 +34,10 @@ export const routes: Routes = [
         (m) => m.OrderReception,
       ),
     title: 'New order',
+    resolve: {
+      assignedShop: assignedShopResolver,
+      cleaningServices: cleaningServicesResolver,
+    },
   },
   {
     path: 'manager',

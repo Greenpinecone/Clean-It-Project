@@ -5,11 +5,11 @@ import {
   DestroyRef,
   computed,
   inject,
+  input,
   signal,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
-  AbstractControl,
   FormArray,
   FormControl,
   FormGroup,
@@ -28,25 +28,24 @@ import {
   startWith,
   switchMap,
 } from 'rxjs';
-
 import { getApiValidationErrors } from '@core/api-errors/api-problem';
 import { DemoUser } from '@core/auth/demo-user';
 import { ToastNotifier } from '@core/notifications/toast-notifier';
-
-import { CleaningServiceApi } from '../data-access/api/cleaning-service-api';
 import { CustomerApi } from '../data-access/api/customer-api';
 import { OrderApi } from '../data-access/api/order-api';
-import { ShopApi } from '../data-access/api/shop-api';
 import { AssignedShopResponse } from '../data-access/dto/assigned-shop-response';
 import { CleaningServiceResponse } from '../data-access/dto/cleaning-service-response';
 import { CreateOrderRequest } from '../data-access/dto/create-order-request';
 import { CustomerSearchResponse } from '../data-access/dto/customer-search-response';
-import { OrderSummaryResponse } from '../data-access/dto/order-summary-response';
 import { CustomerSearchParams } from '../models/customer-search-params';
 import { TEXTILE_OPTIONS } from '../models/textile-option';
 import { TextileType } from '../models/textile-type';
 import { customerContactRequiredValidator } from './customer-contact-required.validator';
 import { CleaningServiceCode } from '../models/cleaning-service-codes';
+import {
+  applyServerValidationErrors,
+  clearServerValidationErrors,
+} from '@core/forms/server-validation-errors';
 
 type CustomerForm = FormGroup<{
   id: FormControl<string>;
@@ -75,15 +74,28 @@ type ReceptionForm = FormGroup<{
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class OrderReception {
-  private readonly cleaningServiceApi = inject(CleaningServiceApi);
   private readonly customerApi = inject(CustomerApi);
   private readonly destroyRef = inject(DestroyRef);
   private readonly demoUser = inject(DemoUser);
   private readonly fb = inject(NonNullableFormBuilder);
   private readonly orderApi = inject(OrderApi);
   private readonly router = inject(Router);
-  private readonly shopApi = inject(ShopApi);
   private readonly toastNotifier = inject(ToastNotifier);
+
+  protected readonly assignedShop = input.required<AssignedShopResponse>();
+  protected readonly cleaningServices = input.required<CleaningServiceResponse[]>();
+
+  protected readonly customerResults = signal<CustomerSearchResponse[]>([]);
+  protected readonly selectedCustomer = signal<CustomerSearchResponse | null>(null);
+  protected readonly isNewCustomerMode = signal(false);
+  protected readonly isSearchingCustomers = signal(false);
+  protected readonly isSubmitting = signal(false);
+  protected readonly submitted = signal(false);
+  protected readonly showCustomerResults = signal(false);
+  protected readonly errorMessage = signal<string | null>(null);
+  protected readonly customerSearchMessage = signal<string | null>(null);
+  private readonly formChanged = signal(0);
+  protected readonly canOpenManagerOverview = this.demoUser.isManager;
 
   protected readonly textileOptions = TEXTILE_OPTIONS;
 
@@ -100,24 +112,6 @@ export class OrderReception {
     expectedPickupDate: ['', [Validators.required]],
     items: this.fb.array<OrderItemForm>([], [Validators.required]),
   });
-
-  protected readonly assignedShop = signal<AssignedShopResponse | null>(null);
-  protected readonly cleaningServices = signal<CleaningServiceResponse[]>([]);
-  protected readonly customerResults = signal<CustomerSearchResponse[]>([]);
-  protected readonly selectedCustomer = signal<CustomerSearchResponse | null>(null);
-  protected readonly createdOrder = signal<OrderSummaryResponse | null>(null);
-
-  protected readonly isLoading = signal(false);
-  protected readonly isSearchingCustomers = signal(false);
-  protected readonly isSubmitting = signal(false);
-  protected readonly submitted = signal(false);
-  protected readonly showCustomerResults = signal(false);
-  protected readonly errorMessage = signal<string | null>(null);
-  protected readonly customerSearchMessage = signal<string | null>(null);
-
-  private readonly formChanged = signal(0);
-
-  protected readonly canOpenManagerOverview = this.demoUser.isManager;
 
   protected readonly servicePriceByCode = computed(
     () =>
@@ -140,40 +134,11 @@ export class OrderReception {
 
   constructor() {
     this.expectedPickupDate.setValue(this.calculateExpectedPickupDate(0), { emitEvent: false });
-    this.loadInitialData();
     this.watchCustomerSearch();
     this.watchFormChanges();
   }
 
-  protected get customer(): CustomerForm {
-    return this.receptionForm.controls.customer;
-  }
-
-  protected get displayName(): FormControl<string> {
-    return this.customer.controls.displayName;
-  }
-
-  protected get email(): FormControl<string> {
-    return this.customer.controls.email;
-  }
-
-  protected get phoneNumber(): FormControl<string> {
-    return this.customer.controls.phoneNumber;
-  }
-
-  protected get expectedPickupDate(): FormControl<string> {
-    return this.receptionForm.controls.expectedPickupDate;
-  }
-
-  protected get items(): FormArray<OrderItemForm> {
-    return this.receptionForm.controls.items;
-  }
-
   protected addTextile(textileType: TextileType): void {
-    if (this.isTextileSelected(textileType)) {
-      return;
-    }
-
     this.items.push(
       this.fb.group({
         textileType: [textileType, [Validators.required]],
@@ -184,19 +149,11 @@ export class OrderReception {
     );
 
     this.items.markAsTouched();
-    this.formChanged.update((value) => value + 1);
-    this.updateExpectedPickupDate();
   }
 
   protected removeItem(index: number): void {
     this.items.removeAt(index);
     this.items.markAsTouched();
-    this.formChanged.update((value) => value + 1);
-    this.updateExpectedPickupDate();
-  }
-
-  protected isTextileSelected(textileType: TextileType): boolean {
-    return this.items.controls.some((item) => item.controls.textileType.value === textileType);
   }
 
   protected toggleService(
@@ -212,7 +169,6 @@ export class OrderReception {
 
     serviceCodes.setValue(next);
     serviceCodes.markAsTouched();
-    this.formChanged.update((value) => value + 1);
   }
 
   protected isServiceSelected(item: OrderItemForm, serviceCode: CleaningServiceCode): boolean {
@@ -247,6 +203,10 @@ export class OrderReception {
   }
 
   protected clearSelectedCustomer(): void {
+    if (this.isNewCustomerMode()) {
+      return;
+    }
+
     if (!this.selectedCustomer() && !this.customer.controls.id.value) {
       return;
     }
@@ -255,15 +215,25 @@ export class OrderReception {
     this.customer.controls.id.setValue('', { emitEvent: false });
   }
 
+  protected setNewCustomerMode(enabled: boolean): void {
+    this.isNewCustomerMode.set(enabled);
+    this.customerResults.set([]);
+    this.customerSearchMessage.set(null);
+    this.showCustomerResults.set(false);
+
+    if (enabled) {
+      this.selectedCustomer.set(null);
+      this.customer.controls.id.setValue('', { emitEvent: false });
+    }
+  }
+
   protected submit(): void {
     this.submitted.set(true);
     this.errorMessage.set(null);
-    this.createdOrder.set(null);
-    this.clearServerErrors(this.receptionForm);
+    clearServerValidationErrors(this.receptionForm);
 
-    if (this.receptionForm.invalid || !this.assignedShop()) {
+    if (this.receptionForm.invalid) {
       this.receptionForm.markAllAsTouched();
-      this.errorMessage.set('Please correct the highlighted fields.');
       return;
     }
 
@@ -272,24 +242,28 @@ export class OrderReception {
     this.orderApi
       .createOrder(this.toCreateOrderRequest())
       .pipe(
-        finalize(() => this.isSubmitting.set(false)),
+        finalize(() => {
+          this.isSubmitting.set(false);
+        }),
         takeUntilDestroyed(this.destroyRef),
       )
       .subscribe({
         next: (order) => {
-          this.createdOrder.set(order);
+          this.resetForNextOrder();
           this.toastNotifier.success(`Order ${order.orderNumber} was received.`);
+          if (this.canOpenManagerOverview()) {
+            void this.router.navigate(['/manager', 'orders']);
+          }
         },
         error: (error: unknown) => {
           const validationErrors = getApiValidationErrors(error);
 
           if (validationErrors.length > 0) {
-            this.applyServerValidationErrors(validationErrors);
-            this.errorMessage.set('Please correct the highlighted fields.');
+            applyServerValidationErrors(this.receptionForm, validationErrors, (message) => {
+              this.toastNotifier.error(message);
+            });
             return;
           }
-
-          this.errorMessage.set('The order could not be created.');
         },
       });
   }
@@ -297,9 +271,11 @@ export class OrderReception {
   protected resetForNextOrder(): void {
     this.submitted.set(false);
     this.errorMessage.set(null);
-    this.createdOrder.set(null);
     this.selectedCustomer.set(null);
     this.customerResults.set([]);
+    this.isNewCustomerMode.set(false);
+    this.customerSearchMessage.set(null);
+    this.showCustomerResults.set(false);
     this.items.clear({ emitEvent: false });
     this.receptionForm.reset(
       {
@@ -312,40 +288,14 @@ export class OrderReception {
     this.formChanged.update((value) => value + 1);
   }
 
-  protected goToManagerOverview(): void {
-    void this.router.navigate(['/manager', 'orders']);
-  }
-
   protected shouldShowCustomerDropdown(): boolean {
     return (
+      !this.isNewCustomerMode() &&
       this.showCustomerResults() &&
       (this.isSearchingCustomers() ||
         this.customerResults().length > 0 ||
         this.customerSearchMessage() !== null)
     );
-  }
-
-  private loadInitialData(): void {
-    this.isLoading.set(true);
-
-    this.shopApi
-      .getAssignedShop()
-      .pipe(
-        finalize(() => this.isLoading.set(false)),
-        takeUntilDestroyed(this.destroyRef),
-      )
-      .subscribe({
-        next: (shop) => this.assignedShop.set(shop),
-        error: () => this.errorMessage.set('Assigned shop could not be loaded.'),
-      });
-
-    this.cleaningServiceApi
-      .getCleaningServices()
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (services) => this.cleaningServices.set(services),
-        error: () => this.errorMessage.set('Cleaning services could not be loaded.'),
-      });
   }
 
   private watchCustomerSearch(): void {
@@ -355,10 +305,16 @@ export class OrderReception {
         map(() => this.toCustomerSearchParams()),
         debounceTime(300),
         distinctUntilChanged(
-          (previous, current) => JSON.stringify(previous) === JSON.stringify(current),
+          (previous, current) =>
+            previous.displayName === current.displayName &&
+            previous.email === current.email &&
+            previous.phoneNumber === current.phoneNumber,
         ),
         switchMap((params) => {
-          if (!params.displayName && !params.email && !params.phoneNumber) {
+          if (
+            this.isNewCustomerMode() ||
+            (!params.displayName && !params.email && !params.phoneNumber)
+          ) {
             this.customerResults.set([]);
             this.customerSearchMessage.set(null);
             this.showCustomerResults.set(false);
@@ -383,9 +339,7 @@ export class OrderReception {
         this.customerResults.set(customers);
 
         if (customers.length === 0 && this.showCustomerResults() && !this.customerSearchMessage()) {
-          this.customerSearchMessage.set(
-            'No existing customer found. A new customer will be created.',
-          );
+          this.customerSearchMessage.set('No existing customer found.');
         }
       });
   }
@@ -395,6 +349,12 @@ export class OrderReception {
       this.formChanged.update((value) => value + 1);
       this.updateExpectedPickupDate();
     });
+  }
+
+  protected showCustomerSearchOnFocus(): void {
+    if (!this.isNewCustomerMode()) {
+      this.showCustomerResults.set(true);
+    }
   }
 
   private updateExpectedPickupDate(): void {
@@ -435,10 +395,6 @@ export class OrderReception {
     const value = this.receptionForm.getRawValue();
     const shop = this.assignedShop();
 
-    if (!shop) {
-      throw new Error('Assigned shop is required.');
-    }
-
     return {
       shopCode: shop.shopCode,
       expectedPickupDate: value.expectedPickupDate,
@@ -462,30 +418,27 @@ export class OrderReception {
     return trimmedValue ? trimmedValue : undefined;
   }
 
-  private applyServerValidationErrors(errors: { field?: string; message: string }[]): void {
-    for (const error of errors) {
-      const control = error.field
-        ? this.receptionForm.get(error.field.replace(/\[(\d+)]/g, '.$1'))
-        : null;
-
-      if (!control) {
-        this.errorMessage.set(error.message);
-        continue;
-      }
-
-      control.setErrors({ ...control.errors, server: error.message });
-      control.markAsTouched();
-    }
+  protected get customer(): CustomerForm {
+    return this.receptionForm.controls.customer;
   }
 
-  private clearServerErrors(control: AbstractControl): void {
-    if (control.errors?.['server']) {
-      const { ...remainingErrors } = control.errors;
-      control.setErrors(Object.keys(remainingErrors).length > 0 ? remainingErrors : null);
-    }
+  protected get displayName(): FormControl<string> {
+    return this.customer.controls.displayName;
+  }
 
-    if (control instanceof FormGroup || control instanceof FormArray) {
-      Object.values(control.controls).forEach((child) => this.clearServerErrors(child));
-    }
+  protected get email(): FormControl<string> {
+    return this.customer.controls.email;
+  }
+
+  protected get phoneNumber(): FormControl<string> {
+    return this.customer.controls.phoneNumber;
+  }
+
+  protected get expectedPickupDate(): FormControl<string> {
+    return this.receptionForm.controls.expectedPickupDate;
+  }
+
+  protected get items(): FormArray<OrderItemForm> {
+    return this.receptionForm.controls.items;
   }
 }

@@ -10,6 +10,7 @@ import {
   provideRouter,
   RedirectCommand,
   Router,
+  withComponentInputBinding,
   withNavigationErrorHandler,
 } from '@angular/router';
 import { HttpErrorResponse, provideHttpClient, withInterceptors } from '@angular/common/http';
@@ -29,6 +30,7 @@ export const appConfig: ApplicationConfig = {
     },
     provideRouter(
       routes,
+      withComponentInputBinding(),
       withNavigationErrorHandler((navigationError) => {
         const router = inject(Router);
         const toastNotifier = inject(ToastNotifier);
