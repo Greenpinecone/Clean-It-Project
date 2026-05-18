@@ -2,7 +2,6 @@ package com.mk.backend.shared.error;
 
 import jakarta.validation.ConstraintViolationException;
 import java.net.URI;
-import java.util.ArrayList;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,11 +11,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.validation.BindException;
 import org.springframework.validation.FieldError;
-import org.springframework.validation.method.ParameterValidationResult;
-import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
@@ -84,7 +80,7 @@ public class GlobalExceptionHandler {
 
   @ExceptionHandler(MethodArgumentTypeMismatchException.class)
   ProblemDetail handleMethodArgumentTypeMismatchException(
-    MethodArgumentTypeMismatchException exception) {
+      MethodArgumentTypeMismatchException exception) {
 
     String field = exception.getName();
     String message = typeMismatchMessage(field, exception.getRequiredType());
@@ -120,7 +116,7 @@ public class GlobalExceptionHandler {
     }
 
     String message =
-      fieldError.getDefaultMessage() == null ? "Invalid value." : fieldError.getDefaultMessage();
+        fieldError.getDefaultMessage() == null ? "Invalid value." : fieldError.getDefaultMessage();
 
     return new FieldValidationError(fieldError.getField(), message);
   }
