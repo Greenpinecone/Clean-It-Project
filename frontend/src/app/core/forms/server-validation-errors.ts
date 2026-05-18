@@ -29,6 +29,7 @@ export function clearServerValidationErrors(control: AbstractControl): void {
   if (control.errors?.['server']) {
     const { server, ...remainingErrors } = control.errors;
 
+    console.log(server);
     control.setErrors(Object.keys(remainingErrors).length > 0 ? remainingErrors : null);
   }
 
